@@ -7,6 +7,7 @@ import (
 
 // target is expected to be of type []*struct/[]*primitive
 func Query(conn *sql.DB, target any, query string, args ...any) error {
+	// NOTE: we need to ensure dest type is a []*FOO type
 	dest := reflect.ValueOf(target).Elem()
 	destT := dest.Type().Elem().Elem()
 
@@ -29,7 +30,13 @@ func Query(conn *sql.DB, target any, query string, args ...any) error {
 		structP := reflect.New(destT)
 		structVal := structP.Elem()
 
-		for i, colName := range cols {
+		for i := 0; i < structVal.NumField(); i++ {
+			name := cols[i]
+			field := structVal.FieldByName(name)
+			/* TODO: field not found (should be a 0 value if not found)
+			   if !name {}
+			*/
+			// TODO: colType should align with field.Type()
 		}
 	}
 
@@ -40,9 +47,6 @@ func Query(conn *sql.DB, target any, query string, args ...any) error {
 Notes on how to do mapping.
 
 TLDR; iterate via value.NumField() and use colName to set props
-
-NOTE: will panic if FieldByName is not there i think so need to work around
-that...
 
 func main() {
 	var res []*Foo
