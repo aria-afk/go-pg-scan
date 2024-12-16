@@ -2,12 +2,22 @@ package scanner
 
 import (
 	"database/sql"
+	"fmt"
 	"reflect"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
-// target is expected to be of type []*struct/[]*primitive
+// TODO: Struct field name problem:
+// Exported values like Username should be captured when SQL/pSQL returns username
+// ie; we need some kind of smart normalizing of this
+
+// TODO: Nested struct
+// TODO: Error handling and type confirmation
+// TODO: (Maybe) context
+
 func Query(conn *sql.DB, target any, query string, args ...any) error {
-	// NOTE: we need to ensure dest type is a []*FOO type
 	dest := reflect.ValueOf(target).Elem()
 	destT := dest.Type().Elem().Elem()
 
@@ -17,54 +27,41 @@ func Query(conn *sql.DB, target any, query string, args ...any) error {
 	}
 	defer rows.Close()
 
-	for rows.Next() {
-		cols, err := rows.Columns()
-		if err != nil {
-			return err
-		}
-		colTypes, err := rows.ColumnTypes()
-		if err != nil {
-			return err
-		}
+	cols, err := rows.Columns()
+	colLength := len(cols)
+	collectedVals := make([]interface{}, colLength)
+	for i := range collectedVals {
+		var placeholder interface{}
+		collectedVals[i] = &placeholder
+	}
 
+	for rows.Next() {
+		err := rows.Scan(collectedVals...)
+		if err != nil {
+			return err
+		}
 		structP := reflect.New(destT)
 		structVal := structP.Elem()
 
-		for i := 0; i < structVal.NumField(); i++ {
-			name := cols[i]
-			field := structVal.FieldByName(name)
-			/* TODO: field not found (should be a 0 value if not found)
-			   if !name {}
-			*/
-			// TODO: colType should align with field.Type()
+		for i, colName := range cols {
+			fmt.Println(FirstToUpper(colName))
+			collectedValue := *(collectedVals[i]).(*interface{})
+			valueType := reflect.TypeOf(collectedValue).Kind()
+
+			structField := structVal.FieldByName(FirstToUpper(colName))
+
+			switch valueType {
+			case reflect.String:
+				structField.SetString(collectedValue.(string))
+			}
 		}
+
+		dest.Set(reflect.Append(dest, structP))
 	}
 
 	return nil
 }
 
-/*
-Notes on how to do mapping.
-
-TLDR; iterate via value.NumField() and use colName to set props
-
-func main() {
-	var res []*Foo
-	test(&res)
+func FirstToUpper(str string) string {
+	return cases.Title(language.English).String(str)
 }
-
-func test(target any) {
-	slice := reflect.ValueOf(target).Elem()
-
-	valuet := slice.Type().Elem().Elem()
-	valuep := reflect.New(valuet)
-	value := valuep.Elem()
-
-	for i := 0; i < value.NumField(); i++ {
-		name := value.Type().Field(i).Name
-		field := value.FieldByName(name)
-		fieldType := field.Type()
-		fmt.Println(fieldType)
-	}
-}
-*/
